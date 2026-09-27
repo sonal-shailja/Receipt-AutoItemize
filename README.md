@@ -112,11 +112,12 @@ curl -s -X PATCH localhost:8080/transactions/$TID/items -H 'Content-Type: applic
   -d '{"items":[{"description":"Espresso","amount":3.50}]}'
 ```
 ```json
-{"error":{"code":"items_total_mismatch","message":"line items plus taxes total 6.35 but the receipt total is 17.85",
- "details":{"expected_total":"17.85","items_total":"3.50","tax_total":"2.85","difference":"11.50","reason":"total_mismatch"}}}
+{"error":{"code":"items_total_mismatch","message":"line items plus taxes minus discount total 6.35 but the receipt total is 17.85",
+ "details":{"expected_total":"17.85","items_total":"3.50","tax_total":"2.85","discount_total":"0.00","difference":"11.50","reason":"total_mismatch"},
+ "request_id":"req_01M3…"}}
 ```
 
-Each item also accepts an optional `quantity` and `tax_amount`. Amounts may have at most two decimals.
+Each item also accepts an optional `quantity` and `tax_amount`. Amounts must be zero or positive, with at most two decimals, and no larger than 10 trillion. JSON request bodies are capped at 1 MB.
 
 ### `POST /transactions/{id}/itemize`: re-run auto-itemize from stored OCR
 
@@ -147,16 +148,22 @@ done
 |---|---|---|
 | `receipts` | the uploaded file: path, type, size, sha256 | insert-only |
 | `ocr_results` | one row per `process` run: provider, `SUCCEEDED`/`FAILED`, **raw OCR text**, error | insert-only; re-itemize replays `raw_text` |
-| `transactions` | merchant, date, currency, subtotal, grand total, `itemize_status` + reason; unique `receipt_id`; `ocr_result_id` it was built from | one per receipt |
+| `transactions` | merchant, date, currency, subtotal, grand total, receipt-level `discount` (positive, nullable), `itemize_status` + reason; unique `receipt_id`; `ocr_result_id` it was built from | one per receipt |
 | `taxes` | `name`, `rate` (basis points; the API shows `0.19`), `amount`, `inclusive` | replaced as a set; old rows soft-deleted |
 | `line_items` | `description`, `amount`, optional `quantity` / `tax_amount`, `source` `AUTO`/`USER` | replaced as a set; old rows soft-deleted |
 
-Money is stored as `int64` minor units. OCR amounts are parsed from strings exactly, and floats appear only in the JSON. Per-item `tax_amount` is stored only when it is supplied; it is never derived from the receipt tax. The schema is in [`internal/database/migrations/00001_init.sql`](internal/database/migrations/00001_init.sql).
+Money is stored as `int64` minor units (cents for EUR, paise for INR), in columns ending in `_minor`. OCR amounts are parsed from strings exactly, and floats appear only in the JSON. Per-item `tax_amount` is stored only when it is supplied; it is never derived from the receipt tax. The schema is in [`internal/database/migrations/`](internal/database/migrations/).
+
+How receipt lines are read:
+- `TOTAL`, `Subtotal`, `VAT 19%` / `incl. VAT 19%` and `Discount` lines are summary lines, not items. A trailing colon is accepted (`TOTAL: 17.85`).
+- A `Discount` line is stored as the receipt-level discount, always as a positive amount, whether it is printed as `1.00` or `-1.00`.
+- Item amounts are positive. Any other line printed with a minus is ignored rather than guessed at.
+- Lines with no amount (such as "Trip fare") and `(…)` notes are ignored.
 
 ## Reconciliation
 
 ```
-Σ line items + Σ exclusive taxes == grand total   (±0.01)
+Σ line items + Σ exclusive taxes − discount == grand total   (±0.01)
 ```
 
 Inclusive taxes ("incl. VAT") are already inside the total, so they are not added again. The same rule is applied by `process`, `itemize` and `PATCH`.

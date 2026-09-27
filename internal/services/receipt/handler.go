@@ -78,6 +78,7 @@ func toProto(txn *transactionentity.Transaction) *receiptv1.Transaction {
 		Currency:      txn.Currency,
 		Subtotal:      optionalAmount(txn.SubtotalMinor),
 		GrandTotal:    optionalAmount(txn.GrandTotalMinor),
+		Discount:      optionalAmount(txn.DiscountMinor),
 		ItemizeStatus: string(txn.ItemizeStatus),
 		ItemizeReason: string(txn.ItemizeReason),
 		Taxes:         make([]*receiptv1.Tax, 0, len(txn.Taxes)),

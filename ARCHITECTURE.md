@@ -34,7 +34,7 @@ sequenceDiagram
 |---|---|---|
 | `ocr.Provider` | Converts a file into raw text. The `stub` provider reads text uploads as-is and maps images and PDFs to fixture text by base name. | filesystem |
 | `extraction.Parse` | Converts text into header, taxes and items. It skips summary lines, lines with no amount, and notes. Pure. | `money` |
-| `reconcile.Check` | Checks that Σ items + Σ exclusive taxes equals the total (±1 cent) and returns the status, reason and gap. Pure. | none |
+| `reconcile.Check` | Checks that Σ items + Σ exclusive taxes − discount equals the total (±1 cent) and returns the status, reason and gap. Pure. | none |
 | `receipt.Service` | Orchestrates the flow and owns DB transactions and idempotency (one transaction per receipt). | repositories, the three above |
 | repositories | Handle GORM on SQLite. Taxes and items are replaced by soft-deleting the old rows and inserting new ones. | `database` |
 

@@ -196,7 +196,7 @@ func TestUpdateItems_MismatchIs409AndWritesNothing(t *testing.T) {
 	assert.Equal(t, "items_total_mismatch", domain.Code)
 	assert.Equal(t, map[string]string{
 		"expected_total": "17.85", "items_total": "3.50", "tax_total": "2.85",
-		"difference": "11.50", "reason": "total_mismatch",
+		"discount_total": "0.00", "difference": "11.50", "reason": "total_mismatch",
 	}, domain.Details)
 
 	after, err := h.svc.Get(context.Background(), txn.ID)
@@ -332,5 +332,77 @@ func TestUpload_RemovesFileWhenInsertFails(t *testing.T) {
 
 func TestGet_UnknownTransaction(t *testing.T) {
 	_, err := newHarness(t).svc.Get(context.Background(), "txn_missing")
+	assert.Equal(t, apperrors.KindNotFound, apperrors.KindOf(err))
+}
+
+func TestProcess_ReceiptDiscountIsStoredAndReconciled(t *testing.T) {
+	h := newHarness(t)
+	rec := h.uploadText(t, "discount.txt", "MERCHANT: Kiosk\nItem 3.50\nDiscount -1.00\nTOTAL 2.50\n")
+
+	txn, err := h.svc.Process(context.Background(), rec.ID)
+	require.NoError(t, err)
+	assert.Equal(t, reconcile.StatusComplete, txn.ItemizeStatus)
+	require.NotNil(t, txn.DiscountMinor)
+	assert.Equal(t, int64(100), *txn.DiscountMinor)
+
+	got, err := h.svc.UpdateItems(context.Background(), txn.ID, []ItemInput{{Description: "Item", AmountMinor: 350}})
+	require.NoError(t, err, "PATCH reconciles against the stored discount")
+	assert.Equal(t, reconcile.StatusComplete, got.ItemizeStatus)
+
+	_, err = h.svc.UpdateItems(context.Background(), txn.ID, []ItemInput{{Description: "Item", AmountMinor: 250}})
+	var domain *apperrors.Error
+	require.ErrorAs(t, err, &domain)
+	assert.Equal(t, "1.00", domain.Details["discount_total"])
+	assert.Equal(t, "1.00", domain.Details["difference"])
+}
+
+// failingLineItems fails the last write Process makes, to prove the whole
+// process step rolls back as one unit.
+type failingLineItems struct{ transactionentity.Repository }
+
+func (failingLineItems) ReplaceLineItems(context.Context, string, []transactionentity.LineItem) error {
+	return apperrors.New(apperrors.KindInternal, "line_items_create_failed", "boom")
+}
+
+func TestProcess_RollsBackWhenAWriteFails(t *testing.T) {
+	db := testutils.NewDB(t)
+	files, err := filestore.NewLocal(t.TempDir())
+	require.NoError(t, err)
+	svc := NewService(db, receiptentity.NewRepo(db), failingLineItems{transactionentity.NewRepo(db)}, ocr.NewStub(fixturesDir), files)
+	h := harness{svc: svc, db: db}
+	rec := h.upload(t, "receipt-clean.txt", "text/plain")
+
+	_, err = svc.Process(context.Background(), rec.ID)
+	require.Error(t, err)
+
+	assert.Equal(t, int64(0), h.count(t, "ocr_results", "receipt_id = ?", rec.ID))
+	assert.Equal(t, int64(0), h.count(t, "transactions", "receipt_id = ?", rec.ID))
+	assert.Equal(t, int64(0), h.count(t, "taxes", "1 = 1"))
+}
+
+func TestProcess_OCRFailureOnReprocessKeepsTheTransaction(t *testing.T) {
+	h := newHarness(t)
+	rec := h.upload(t, "receipt-clean.txt", "text/plain")
+	first, err := h.svc.Process(context.Background(), rec.ID)
+	require.NoError(t, err)
+	require.NoError(t, os.Remove(rec.FilePath))
+
+	_, err = h.svc.Process(context.Background(), rec.ID)
+	assert.Equal(t, apperrors.KindUnprocessable, apperrors.KindOf(err))
+
+	after, err := h.svc.Get(context.Background(), first.ID)
+	require.NoError(t, err)
+	assert.Equal(t, first.OCRResultID, after.OCRResultID)
+	assert.Len(t, after.LineItems, 3)
+	assert.Equal(t, int64(1), h.count(t, "ocr_results", "receipt_id = ? AND status = ?", rec.ID, "FAILED"))
+}
+
+func TestItemizeAndUpdateItems_UnknownTransaction(t *testing.T) {
+	h := newHarness(t)
+
+	_, err := h.svc.Itemize(context.Background(), "txn_missing")
+	assert.Equal(t, apperrors.KindNotFound, apperrors.KindOf(err))
+
+	_, err = h.svc.UpdateItems(context.Background(), "txn_missing", []ItemInput{{Description: "x", AmountMinor: 1}})
 	assert.Equal(t, apperrors.KindNotFound, apperrors.KindOf(err))
 }

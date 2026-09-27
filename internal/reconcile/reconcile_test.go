@@ -60,3 +60,15 @@ func TestCheck_Totals(t *testing.T) {
 	assert.Equal(t, int64(1000), got.ItemsTotal)
 	assert.Equal(t, int64(190), got.TaxTotal, "inclusive taxes are excluded")
 }
+
+func TestCheck_DiscountIsSubtracted(t *testing.T) {
+	got := Check(Input{GrandTotal: total(250), Discount: 100, ItemAmounts: []int64{350}})
+
+	assert.Equal(t, StatusComplete, got.Status)
+	assert.Equal(t, int64(100), got.DiscountTotal)
+	assert.Equal(t, int64(0), got.Difference)
+
+	got = Check(Input{GrandTotal: total(250), ItemAmounts: []int64{350}})
+	assert.Equal(t, StatusNeedsReview, got.Status, "without the discount the same items do not add up")
+	assert.Equal(t, int64(-100), got.Difference)
+}

@@ -73,3 +73,15 @@ func TestFormatAndFloats(t *testing.T) {
 	assert.Equal(t, 17.85, ToFloat(1785))
 	assert.Equal(t, 0.19, RateToFraction(1900))
 }
+
+func TestAmountsBeyondRangeAreRejected(t *testing.T) {
+	_, err := ParseMinor("99999999999999999")
+	assert.Error(t, err, "would overflow int64 minor units")
+
+	_, err = FromFloat(1e18)
+	assert.Error(t, err, "would saturate int64 and let a sum wrap around")
+
+	got, err := ParseMinor("10000000000000.00")
+	require.NoError(t, err, "the largest supported amount still parses")
+	assert.Equal(t, MaxMinor, got)
+}

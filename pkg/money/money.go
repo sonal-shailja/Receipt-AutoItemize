@@ -14,6 +14,11 @@ import (
 // is assumed to have two decimal places.
 const Scale = 100
 
+// MaxMinor bounds every amount the service accepts: 10 trillion major units.
+// Summing up to ~900k such amounts stays inside int64, so no reconciliation sum
+// can overflow and wrap back onto a matching total.
+const MaxMinor int64 = 1_000_000_000_000_000
+
 // ParseMinor parses a printed decimal such as "17.85", "3,50" or "24" into
 // minor units without float arithmetic. A comma is read as the decimal mark.
 func ParseMinor(s string) (int64, error) {
@@ -31,8 +36,8 @@ func ParseMinor(s string) (int64, error) {
 	}
 
 	units, err := strconv.ParseInt(whole, 10, 64)
-	if err != nil {
-		return 0, fmt.Errorf("money: parsing %q: %w", s, err)
+	if err != nil || units > MaxMinor/Scale {
+		return 0, fmt.Errorf("money: %q is outside the supported range", s)
 	}
 	cents, err := strconv.ParseInt(frac, 10, 64)
 	if err != nil {
@@ -65,6 +70,9 @@ func FromFloat(f float64) (int64, error) {
 		return 0, fmt.Errorf("money: %v is not a finite amount", f)
 	}
 	scaled := f * Scale
+	if math.Abs(scaled) > float64(MaxMinor) {
+		return 0, fmt.Errorf("money: %v is outside the supported range", f)
+	}
 	rounded := math.Round(scaled)
 	if math.Abs(scaled-rounded) > 1e-6 {
 		return 0, fmt.Errorf("money: %v has more than two decimals", f)

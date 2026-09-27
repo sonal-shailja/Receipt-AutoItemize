@@ -95,9 +95,29 @@ func newGatewayServer(ctx context.Context, deps *Dependencies) (*http.Server, er
 
 	return &http.Server{
 		Addr:              deps.Config.Server.HTTP,
-		Handler:           mux,
+		Handler:           limitJSONBodies(mux, maxJSONBodyBytes),
 		ReadHeaderTimeout: 10 * time.Second,
+		// Bounds a slow client trickling a body or reading a response.
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  60 * time.Second,
 	}, nil
+}
+
+// maxJSONBodyBytes caps every JSON request body; the largest real one is a
+// PATCH item list.
+const maxJSONBodyBytes = 1 << 20
+
+// limitJSONBodies caps request bodies before grpc-gateway buffers them. The
+// multipart upload is exempt because its handler applies the configured, larger
+// upload limit itself.
+func limitJSONBodies(next http.Handler, maxBytes int64) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/receipts" {
+			r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // incomingHeaderMatcher decides which HTTP headers cross into gRPC metadata.

@@ -33,8 +33,11 @@ type Receipt struct {
 	Currency   string
 	Subtotal   *int64
 	GrandTotal *int64
-	Taxes      []Tax
-	Items      []Item
+	// Discount is the receipt-level discount, always positive however it is
+	// printed; it is subtracted when reconciling.
+	Discount *int64
+	Taxes    []Tax
+	Items    []Item
 }
 
 var (
@@ -49,12 +52,14 @@ var (
 var (
 	totalLabels    = map[string]bool{"total": true, "grand total": true, "amount due": true}
 	subtotalLabels = map[string]bool{"subtotal": true, "sub total": true, "sub-total": true}
+	discountLabels = map[string]bool{"discount": true, "rabatt": true}
 )
 
 // Parse reads header fields, summary lines, taxes and items from OCR text.
 //
-// Summary lines (subtotal, total) and tax lines end in an amount but are not
-// items. Lines without an amount — a service description such as "Trip fare",
+// Summary lines (subtotal, total, discount) and tax lines end in an amount but
+// are not items. Item amounts are positive, so any other minus line is ignored
+// rather than guessed at. Lines without an amount — a service description such as "Trip fare",
 // column headers, greetings — and parenthesised notes are ignored: turning
 // them into items would invent data.
 func Parse(text string) Receipt {
@@ -70,7 +75,8 @@ func Parse(text string) Receipt {
 		if m == nil {
 			continue
 		}
-		label := strings.TrimSpace(m[1])
+		// "TOTAL: 17.85" and "TOTAL 17.85" are the same line.
+		label := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(m[1]), ":"))
 		amount, err := money.ParseMinor(m[2])
 		if err != nil {
 			continue
@@ -82,6 +88,14 @@ func Parse(text string) Receipt {
 			r.GrandTotal = &amount
 		case subtotalLabels[lower]:
 			r.Subtotal = &amount
+		case discountLabels[lower]:
+			discount := abs(amount)
+			if r.Discount != nil {
+				discount += *r.Discount
+			}
+			r.Discount = &discount
+		case amount < 0:
+			continue
 		default:
 			if tax, ok := parseTax(label, amount); ok {
 				r.Taxes = append(r.Taxes, tax)
@@ -128,4 +142,11 @@ func parseTax(label string, amount int64) (Tax, bool) {
 		return Tax{}, false
 	}
 	return Tax{Name: m[2], RateBps: rate, Amount: amount, Inclusive: m[1] != ""}, true
+}
+
+func abs(v int64) int64 {
+	if v < 0 {
+		return -v
+	}
+	return v
 }

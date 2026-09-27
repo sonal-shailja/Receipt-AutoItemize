@@ -153,6 +153,7 @@ func (s *Service) Process(ctx context.Context, receiptID string) (*transactionen
 		txn.Currency = parsed.Currency
 		txn.SubtotalMinor = parsed.Subtotal
 		txn.GrandTotalMinor = parsed.GrandTotal
+		txn.DiscountMinor = parsed.Discount
 		txn.Taxes = taxRows(parsed.Taxes)
 		items := autoItems(parsed.Items)
 		txn.SetItemizeResult(txn.Reconcile(transactionentity.AmountsOf(items)))
@@ -282,13 +283,14 @@ func userItems(inputs []ItemInput) ([]transactionentity.LineItem, error) {
 func mismatchError(result reconcile.Result) error {
 	message := "the transaction has no grand total to reconcile line items against"
 	if result.Reason != reconcile.ReasonTotalNotFound {
-		message = fmt.Sprintf("line items plus taxes total %s but the receipt total is %s",
-			money.Format(result.ItemsTotal+result.TaxTotal), money.Format(result.ExpectedTotal))
+		message = fmt.Sprintf("line items plus taxes minus discount total %s but the receipt total is %s",
+			money.Format(result.ItemsTotal+result.TaxTotal-result.DiscountTotal), money.Format(result.ExpectedTotal))
 	}
 	return errors.New(errors.KindConflict, "items_total_mismatch", message).WithDetails(map[string]string{
 		"expected_total": money.Format(result.ExpectedTotal),
 		"items_total":    money.Format(result.ItemsTotal),
 		"tax_total":      money.Format(result.TaxTotal),
+		"discount_total": money.Format(result.DiscountTotal),
 		"difference":     money.Format(result.Difference),
 		"reason":         string(result.Reason),
 	})

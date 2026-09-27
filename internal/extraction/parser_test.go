@@ -78,3 +78,36 @@ func TestParse_NoTotal(t *testing.T) {
 	assert.Nil(t, got.GrandTotal)
 	assert.Len(t, got.Items, 1)
 }
+
+func TestParse_ColonLabelledSummaryLines(t *testing.T) {
+	got := Parse("Espresso 15.00\nSubtotal: 15.00\nVAT 19%: 2.85\nTOTAL: 17.85\n")
+
+	assert.Equal(t, []Item{{Description: "Espresso", Amount: 1500}}, got.Items)
+	assert.Equal(t, ptr(1500), got.Subtotal)
+	assert.Equal(t, ptr(1785), got.GrandTotal)
+	assert.Equal(t, []Tax{{Name: "VAT", RateBps: 1900, Amount: 285}}, got.Taxes)
+}
+
+func TestParse_DiscountIsReceiptLevelAndPositive(t *testing.T) {
+	cases := map[string]string{
+		"printed with a minus": "Item 3.50\nDiscount -1.00\nTOTAL 2.50\n",
+		"printed without sign": "Item 3.50\nDiscount 1.00\nTOTAL 2.50\n",
+		"with a colon":         "Item 3.50\nDiscount: -1.00\nTOTAL 2.50\n",
+	}
+	for name, text := range cases {
+		t.Run(name, func(t *testing.T) {
+			got := Parse(text)
+			assert.Equal(t, []Item{{Description: "Item", Amount: 350}}, got.Items)
+			assert.Equal(t, ptr(100), got.Discount)
+		})
+	}
+}
+
+func TestParse_OtherMinusLinesAreNotItems(t *testing.T) {
+	// Item amounts are positive everywhere (PATCH rejects negatives too); a
+	// minus line that is not a discount is ignored rather than guessed at.
+	got := Parse("Item 3.50\nRefund -2.00\nTOTAL 3.50\n")
+
+	assert.Equal(t, []Item{{Description: "Item", Amount: 350}}, got.Items)
+	assert.Nil(t, got.Discount)
+}

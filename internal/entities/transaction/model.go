@@ -38,6 +38,7 @@ type Transaction struct {
 	Currency        string           `gorm:"column:currency"`
 	SubtotalMinor   *int64           `gorm:"column:subtotal_minor"`
 	GrandTotalMinor *int64           `gorm:"column:grand_total_minor"`
+	DiscountMinor   *int64           `gorm:"column:discount_minor"`
 	ItemizeStatus   reconcile.Status `gorm:"column:itemize_status"`
 	ItemizeReason   reconcile.Reason `gorm:"column:itemize_reason"`
 
@@ -56,16 +57,21 @@ func (t *Transaction) BeforeCreate(tx *gorm.DB) error {
 	return t.Model.BeforeCreate(tx)
 }
 
-// Reconcile checks item amounts against this transaction's stored total and
-// taxes.
+// Reconcile checks item amounts against this transaction's stored total, taxes
+// and discount.
 func (t *Transaction) Reconcile(itemAmounts []int64) reconcile.Result {
 	taxes := make([]reconcile.Tax, 0, len(t.Taxes))
 	for _, tax := range t.Taxes {
 		taxes = append(taxes, reconcile.Tax{Amount: tax.AmountMinor, Inclusive: tax.Inclusive})
 	}
+	var discount int64
+	if t.DiscountMinor != nil {
+		discount = *t.DiscountMinor
+	}
 	return reconcile.Check(reconcile.Input{
 		GrandTotal:  t.GrandTotalMinor,
 		Taxes:       taxes,
+		Discount:    discount,
 		ItemAmounts: itemAmounts,
 	})
 }

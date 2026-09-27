@@ -31,10 +31,13 @@ type Tax struct {
 	Inclusive bool
 }
 
-// Input is a receipt total, its taxes and a candidate set of item amounts.
+// Input is a receipt total, its taxes and discount, and a candidate set of item
+// amounts.
 type Input struct {
-	GrandTotal  *int64
-	Taxes       []Tax
+	GrandTotal *int64
+	Taxes      []Tax
+	// Discount is the receipt-level discount, positive.
+	Discount    int64
 	ItemAmounts []int64
 }
 
@@ -47,15 +50,17 @@ type Result struct {
 	ItemsTotal    int64
 	// TaxTotal counts exclusive taxes only; inclusive ones are already inside
 	// the item amounts.
-	TaxTotal int64
-	// Difference is ExpectedTotal - (ItemsTotal + TaxTotal).
+	TaxTotal      int64
+	DiscountTotal int64
+	// Difference is ExpectedTotal - (ItemsTotal + TaxTotal - DiscountTotal).
 	Difference int64
 }
 
 // Reconciled reports whether the items account for the total.
 func (r Result) Reconciled() bool { return r.Status == StatusComplete }
 
-// Check applies Σ items + Σ exclusive taxes == grand total, within Tolerance.
+// Check applies Σ items + Σ exclusive taxes - discount == grand total, within
+// Tolerance.
 // It never adjusts the total or proposes a balancing line.
 func Check(in Input) Result {
 	var res Result
@@ -68,13 +73,15 @@ func Check(in Input) Result {
 		}
 	}
 
+	res.DiscountTotal = in.Discount
+
 	if in.GrandTotal == nil {
 		res.Status, res.Reason = StatusFailed, ReasonTotalNotFound
 		return res
 	}
 
 	res.ExpectedTotal = *in.GrandTotal
-	res.Difference = res.ExpectedTotal - res.ItemsTotal - res.TaxTotal
+	res.Difference = res.ExpectedTotal - res.ItemsTotal - res.TaxTotal + res.DiscountTotal
 
 	switch {
 	case len(in.ItemAmounts) == 0:

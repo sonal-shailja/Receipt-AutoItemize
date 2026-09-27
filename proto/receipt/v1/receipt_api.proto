@@ -48,6 +48,8 @@ message Transaction {
   // itemize_reason explains a status other than COMPLETE: total_mismatch,
   // no_line_items or total_not_found.
   string itemize_reason = 12;
+  // discount is the receipt-level discount, positive; present only when printed.
+  optional double discount = 13;
 }
 
 // ProcessReceiptRequest names the receipt to OCR and extract.

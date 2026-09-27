@@ -91,6 +91,7 @@ CREATE TABLE transactions (
   currency           TEXT,
   subtotal_minor     INTEGER,              -- NULL when not printed
   grand_total_minor  INTEGER,              -- NULL only when FAILED
+  discount_minor     INTEGER,              -- receipt-level discount, positive; added by 00002
   itemize_status     TEXT NOT NULL,        -- COMPLETE | NEEDS_REVIEW | FAILED
   itemize_reason     TEXT,                 -- total_mismatch | no_line_items | total_not_found
   created_at         INTEGER NOT NULL,
@@ -147,7 +148,7 @@ multiple rows. Per-item tax is not allocated from the receipt tax.
 ## Reconciliation and status
 
 An internal check, not an endpoint, run by process, itemize and PATCH: do the items plus the taxes add up to
-what was paid? `Σ items + Σ exclusive taxes == grand_total`, tolerance 1 minor unit. Inclusive taxes are
+what was paid? `Σ items + Σ exclusive taxes − discount == grand_total`, tolerance 1 minor unit. Inclusive taxes are
 already inside the total.
 
 | Condition | Status | Reason |
