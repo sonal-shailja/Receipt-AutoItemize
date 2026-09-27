@@ -1,0 +1,108 @@
+syntax = "proto3";
+
+package receipt.v1;
+
+import "google/api/annotations.proto";
+
+// Tax is one tax line printed on the receipt.
+message Tax {
+  string id = 1;
+  // name as printed, e.g. "VAT".
+  string name = 2;
+  // rate is a fraction: 0.19 means 19%.
+  double rate = 3;
+  double amount = 4;
+  // inclusive is true when the tax is already contained in the grand total.
+  bool inclusive = 5;
+}
+
+// LineItem is one item of the transaction.
+message LineItem {
+  string id = 1;
+  string description = 2;
+  double amount = 3;
+  optional int32 quantity = 4;
+  // tax_amount is present only when it was supplied; never derived.
+  optional double tax_amount = 5;
+  // source is AUTO for auto-itemized items and USER for user overrides.
+  string source = 6;
+}
+
+// Transaction is the expense record built from one receipt.
+message Transaction {
+  string id = 1;
+  string receipt_id = 2;
+  // ocr_result_id is the OCR run the transaction was built from.
+  string ocr_result_id = 3;
+  string merchant = 4;
+  // date is YYYY-MM-DD as printed.
+  string date = 5;
+  string currency = 6;
+  optional double subtotal = 7;
+  // grand_total is absent only when itemize_status is FAILED.
+  optional double grand_total = 8;
+  repeated Tax taxes = 9;
+  repeated LineItem line_items = 10;
+  // itemize_status is COMPLETE, NEEDS_REVIEW or FAILED.
+  string itemize_status = 11;
+  // itemize_reason explains a status other than COMPLETE: total_mismatch,
+  // no_line_items or total_not_found.
+  string itemize_reason = 12;
+}
+
+// ProcessReceiptRequest names the receipt to OCR and extract.
+message ProcessReceiptRequest {
+  string receipt_id = 1;
+}
+
+// GetTransactionRequest names a transaction.
+message GetTransactionRequest {
+  string transaction_id = 1;
+}
+
+// ItemizeTransactionRequest names a transaction to re-itemize.
+message ItemizeTransactionRequest {
+  string transaction_id = 1;
+}
+
+// LineItemInput is one item in a user override.
+message LineItemInput {
+  string description = 1;
+  double amount = 2;
+  optional int32 quantity = 3;
+  optional double tax_amount = 4;
+}
+
+// UpdateLineItemsRequest replaces a transaction's items with the full list.
+message UpdateLineItemsRequest {
+  string transaction_id = 1;
+  repeated LineItemInput items = 2;
+}
+
+// ReceiptService is the receipt API. POST /receipts (multipart upload) is a
+// plain HTTP handler because grpc-gateway cannot bind multipart bodies.
+service ReceiptService {
+  // ProcessReceipt runs OCR and extraction, creating or updating the
+  // receipt's transaction, taxes and auto-itemized line items.
+  rpc ProcessReceipt(ProcessReceiptRequest) returns (Transaction) {
+    option (google.api.http) = {post: "/receipts/{receipt_id}/process"};
+  }
+
+  // GetTransaction returns a transaction with its taxes and line items.
+  rpc GetTransaction(GetTransactionRequest) returns (Transaction) {
+    option (google.api.http) = {get: "/transactions/{transaction_id}"};
+  }
+
+  // ItemizeTransaction re-runs auto-itemize from the stored OCR text.
+  rpc ItemizeTransaction(ItemizeTransactionRequest) returns (Transaction) {
+    option (google.api.http) = {post: "/transactions/{transaction_id}/itemize"};
+  }
+
+  // UpdateLineItems replaces the line items; 409 if they do not reconcile.
+  rpc UpdateLineItems(UpdateLineItemsRequest) returns (Transaction) {
+    option (google.api.http) = {
+      patch: "/transactions/{transaction_id}/items"
+      body: "*"
+    };
+  }
+}

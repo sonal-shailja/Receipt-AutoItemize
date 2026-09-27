@@ -1,0 +1,25 @@
+version: v1
+# Managed mode writes the go_package option into every file for us, so the
+# .proto files stay free of Go-specific import paths.
+managed:
+  enabled: true
+  go_package_prefix:
+    default: github.com/sonalshailja/receipt-autoitemize/rpc
+    except:
+      - buf.build/googleapis/googleapis
+plugins:
+  # Request/response structs.
+  - name: go
+    out: ../rpc
+    opt:
+      - paths=source_relative
+  # The server interface to implement, plus a client.
+  - name: go-grpc
+    out: ../rpc
+    opt:
+      - paths=source_relative
+  # The REST/JSON reverse proxy, driven by the google.api.http annotations.
+  - name: grpc-gateway
+    out: ../rpc
+    opt:
+      - paths=source_relative

@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+package common.health.v1;
+
+import "google/api/annotations.proto";
+
+// DependencyCheck is the result of probing one dependency.
+message DependencyCheck {
+  string name = 1;
+  // status is SERVING or NOT_SERVING.
+  string status = 2;
+  string error = 3;
+}
+
+// CheckRequest is the request for Check.
+message CheckRequest {}
+
+// CheckResponse reports whether the service can serve traffic.
+message CheckResponse {
+  // status is SERVING, or NOT_SERVING if any dependency is down.
+  string status = 1;
+  repeated DependencyCheck dependencies = 2;
+}
+
+// HealthService exposes the health probe.
+service HealthService {
+  // Check probes the database.
+  rpc Check(CheckRequest) returns (CheckResponse) {
+    option (google.api.http) = {get: "/health"};
+  }
+}

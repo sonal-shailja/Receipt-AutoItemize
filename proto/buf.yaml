@@ -1,0 +1,21 @@
+version: v1
+name: buf.build/sonalshailja/receipt-autoitemize
+deps:
+  # Supplies google/api/annotations.proto, which carries the http option that
+  # grpc-gateway reads to build the REST bindings.
+  - buf.build/googleapis/googleapis
+lint:
+  use:
+    - STANDARD
+  except:
+    # These four rules enforce Google's request/response naming conventions.
+    # They are good hygiene on a published API and pure friction on one that
+    # changes every few minutes, so they are off here deliberately.
+    - RPC_REQUEST_STANDARD_NAME
+    - RPC_RESPONSE_STANDARD_NAME
+    - RPC_REQUEST_RESPONSE_UNIQUE
+    - SERVICE_SUFFIX
+  enum_zero_value_suffix: _UNSPECIFIED
+breaking:
+  use:
+    - FILE
