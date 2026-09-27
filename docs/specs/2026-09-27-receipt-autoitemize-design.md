@@ -42,70 +42,75 @@ the provider name is recorded on each OCR result.
 ## Data model
 
 ```sql
+-- 00001_init.sql, plus the discount column from 00002_add_transaction_discount.sql
+
 CREATE TABLE receipts (
-  id            TEXT PRIMARY KEY,          -- rcpt_<ulid>
-  file_name     TEXT NOT NULL,
-  content_type  TEXT NOT NULL,             -- text/plain | image/* | application/pdf
-  file_path     TEXT NOT NULL,             -- data/uploads/<id><ext>
-  size_bytes    INTEGER NOT NULL,
-  sha256        TEXT NOT NULL,
-  created_at    INTEGER NOT NULL           -- unix ms; row is never updated
+    id           TEXT PRIMARY KEY,          -- rcpt_<ulid>
+    file_name    TEXT    NOT NULL,
+    content_type TEXT    NOT NULL,          -- text/plain | image/* | application/pdf
+    file_path    TEXT    NOT NULL,          -- data/uploads/<id><ext>
+    size_bytes   INTEGER NOT NULL,
+    sha256       TEXT    NOT NULL,
+    created_at   INTEGER NOT NULL,          -- unix ms
+    updated_at   INTEGER NOT NULL
 );
 
 CREATE TABLE ocr_results (
-  id          TEXT PRIMARY KEY,            -- ocr_<ulid>
-  receipt_id  TEXT NOT NULL REFERENCES receipts(id),
-  provider    TEXT NOT NULL,               -- stub
-  status      TEXT NOT NULL,               -- SUCCEEDED | FAILED
-  raw_text    TEXT,                        -- full OCR output; source for re-itemize
-  error       TEXT,                        -- set when FAILED
-  created_at  INTEGER NOT NULL
+    id         TEXT PRIMARY KEY,            -- ocr_<ulid>
+    receipt_id TEXT    NOT NULL REFERENCES receipts (id),
+    provider   TEXT    NOT NULL,            -- stub
+    status     TEXT    NOT NULL,            -- SUCCEEDED | FAILED
+    raw_text   TEXT,                        -- full OCR output; source for re-itemize
+    error      TEXT,                        -- set when FAILED
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
 );
-CREATE INDEX idx_ocr_results_receipt ON ocr_results(receipt_id);
+CREATE INDEX idx_ocr_results_receipt ON ocr_results (receipt_id);
 
 CREATE TABLE transactions (
-  id                 TEXT PRIMARY KEY,     -- txn_<ulid>
-  receipt_id         TEXT NOT NULL UNIQUE REFERENCES receipts(id),
-  ocr_result_id      TEXT NOT NULL REFERENCES ocr_results(id),  -- the OCR run this was built from
-  merchant           TEXT,
-  txn_date           TEXT,                 -- YYYY-MM-DD
-  currency           TEXT,
-  subtotal_minor     INTEGER,              -- NULL when not printed
-  grand_total_minor  INTEGER,              -- NULL only when FAILED
-  discount_minor     INTEGER,              -- receipt-level discount, positive; added by 00002
-  itemize_status     TEXT NOT NULL,        -- COMPLETE | NEEDS_REVIEW | FAILED
-  itemize_reason     TEXT,                 -- total_mismatch | no_line_items | total_not_found
-  created_at         INTEGER NOT NULL,
-  updated_at         INTEGER NOT NULL
+    id                TEXT PRIMARY KEY,     -- txn_<ulid>
+    receipt_id        TEXT    NOT NULL UNIQUE REFERENCES receipts (id),
+    ocr_result_id     TEXT    NOT NULL REFERENCES ocr_results (id),  -- the OCR run it was built from
+    merchant          TEXT,
+    txn_date          TEXT,                 -- YYYY-MM-DD
+    currency          TEXT,
+    subtotal_minor    INTEGER,              -- NULL when not printed
+    grand_total_minor INTEGER,              -- NULL only when FAILED
+    itemize_status    TEXT    NOT NULL,     -- COMPLETE | NEEDS_REVIEW | FAILED
+    itemize_reason    TEXT,                 -- total_mismatch | no_line_items | total_not_found
+    created_at        INTEGER NOT NULL,
+    updated_at        INTEGER NOT NULL,
+    discount_minor    INTEGER               -- receipt-level discount, positive (00002)
 );
 
 CREATE TABLE taxes (
-  id              TEXT PRIMARY KEY,        -- tax_<ulid>
-  transaction_id  TEXT NOT NULL REFERENCES transactions(id),
-  name            TEXT NOT NULL,
-  rate_bps        INTEGER NOT NULL,        -- 1900 = 19%; API renders 0.19
-  amount_minor    INTEGER NOT NULL,
-  inclusive       INTEGER NOT NULL,        -- 1 = already contained in the total
-  position        INTEGER NOT NULL,
-  created_at      INTEGER NOT NULL,
-  deleted_at      INTEGER                  -- soft delete; NULL = live
+    id             TEXT PRIMARY KEY,        -- tax_<ulid>
+    transaction_id TEXT    NOT NULL REFERENCES transactions (id),
+    position       INTEGER NOT NULL,
+    name           TEXT    NOT NULL,
+    rate_bps       INTEGER NOT NULL,        -- 1900 = 19%; API renders 0.19
+    amount_minor   INTEGER NOT NULL,
+    inclusive      INTEGER NOT NULL,        -- 1 = already contained in the total
+    created_at     INTEGER NOT NULL,
+    updated_at     INTEGER NOT NULL,
+    deleted_at     INTEGER                  -- soft delete; NULL = live
 );
+CREATE INDEX idx_taxes_transaction ON taxes (transaction_id, deleted_at);
 
 CREATE TABLE line_items (
-  id                TEXT PRIMARY KEY,      -- li_<ulid>
-  transaction_id    TEXT NOT NULL REFERENCES transactions(id),
-  position          INTEGER NOT NULL,
-  description       TEXT NOT NULL,
-  amount_minor      INTEGER NOT NULL,
-  quantity          INTEGER,
-  tax_amount_minor  INTEGER,               -- only when the receipt prints it; never derived
-  source            TEXT NOT NULL,         -- AUTO | USER
-  created_at        INTEGER NOT NULL,
-  updated_at        INTEGER NOT NULL,
-  deleted_at        INTEGER                -- soft delete; NULL = live
+    id               TEXT PRIMARY KEY,      -- li_<ulid>
+    transaction_id   TEXT    NOT NULL REFERENCES transactions (id),
+    position         INTEGER NOT NULL,
+    description      TEXT    NOT NULL,
+    amount_minor     INTEGER NOT NULL,
+    quantity         INTEGER,
+    tax_amount_minor INTEGER,               -- only when supplied; never derived
+    source           TEXT    NOT NULL,      -- AUTO | USER
+    created_at       INTEGER NOT NULL,
+    updated_at       INTEGER NOT NULL,
+    deleted_at       INTEGER                -- soft delete; NULL = live
 );
-CREATE INDEX idx_taxes_txn ON taxes(transaction_id, deleted_at);
-CREATE INDEX idx_line_items_txn ON line_items(transaction_id, deleted_at);
+CREATE INDEX idx_line_items_transaction ON line_items (transaction_id, deleted_at);
 ```
 
 Taxes and line items are never hard-deleted: replacing them soft-deletes the live rows and inserts new ones,
