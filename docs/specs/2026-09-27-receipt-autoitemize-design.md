@@ -34,14 +34,10 @@ the provider name is recorded on each OCR result.
 
 ## Receipt vs transaction
 
-- **Receipt** — the uploaded document: evidence of what the paper said. Immutable after upload.
-- **OCR result** — one attempt at reading a receipt. Each `process` call inserts a new row, so re-runs keep
-  history instead of overwriting the raw text.
-- **Transaction** — the expense record (header, taxes, items) interpreted from one OCR result and editable by
-  the user. It records which OCR result it was built from; `/itemize` replays that result's raw text.
-
-The brief pairs one receipt with one transaction; keeping them separate matches expense products where card
-transactions and receipts arrive independently. The brief defines no receipt read endpoint and none is added.
+- **Receipt**: the uploaded file. Never changed after upload.
+- **OCR result**: the text read from the receipt. Each `process` call adds a new one, so older reads are kept.
+- **Transaction**: the expense created from the receipt (merchant, total, taxes, line items). One per
+  receipt. The user can edit its line items; `/itemize` re-reads them from the stored OCR text.
 
 ## Data model
 
