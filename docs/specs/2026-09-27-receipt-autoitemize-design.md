@@ -49,23 +49,80 @@ the provider name is recorded on the receipt.
 
 ## Data model
 
-- `receipts`: id, file_path, file_name, content_type, sha256, ocr_provider, raw_ocr_text, processed_at.
-- `transactions`: id, **unique** receipt_id, merchant, date, currency, grand_total, itemize_status, itemize_reason.
-- `taxes`: id, transaction_id, name, rate, amount, inclusive.
-- `line_items`: id, transaction_id, position, description, amount, optional quantity and tax_amount.
+```sql
+CREATE TABLE receipts (
+  id            TEXT PRIMARY KEY,          -- rcpt_<ulid>
+  file_name     TEXT NOT NULL,
+  content_type  TEXT NOT NULL,             -- text/plain | image/* | application/pdf
+  file_path     TEXT NOT NULL,             -- data/uploads/<id><ext>
+  size_bytes    INTEGER NOT NULL,
+  sha256        TEXT NOT NULL,
+  status        TEXT NOT NULL,             -- UPLOADED | PROCESSED | FAILED
+  ocr_provider  TEXT,                      -- NULL until processed
+  raw_ocr_text  TEXT,                      -- full OCR output; source for re-itemize
+  processed_at  INTEGER,
+  created_at    INTEGER NOT NULL,          -- unix ms
+  updated_at    INTEGER NOT NULL
+);
 
-Money is `int64` minor units end to end; OCR decimals are parsed exactly (string → cents), never via float math.
+CREATE TABLE transactions (
+  id                 TEXT PRIMARY KEY,     -- txn_<ulid>
+  receipt_id         TEXT NOT NULL UNIQUE REFERENCES receipts(id),
+  merchant           TEXT,
+  txn_date           TEXT,                 -- YYYY-MM-DD
+  currency           TEXT,
+  subtotal_minor     INTEGER,              -- NULL when not printed
+  grand_total_minor  INTEGER,              -- NULL only when FAILED
+  itemize_status     TEXT NOT NULL,        -- COMPLETE | NEEDS_REVIEW | FAILED
+  itemize_reason     TEXT,                 -- total_mismatch | no_line_items | total_not_found
+  created_at         INTEGER NOT NULL,
+  updated_at         INTEGER NOT NULL
+);
+
+CREATE TABLE taxes (
+  id              TEXT PRIMARY KEY,        -- tax_<ulid>
+  transaction_id  TEXT NOT NULL REFERENCES transactions(id),
+  name            TEXT NOT NULL,
+  rate_bps        INTEGER NOT NULL,        -- 1900 = 19%; API renders 0.19
+  amount_minor    INTEGER NOT NULL,
+  inclusive       INTEGER NOT NULL,        -- 1 = already contained in the total
+  position        INTEGER NOT NULL,
+  created_at      INTEGER NOT NULL
+);
+
+CREATE TABLE line_items (
+  id                TEXT PRIMARY KEY,      -- li_<ulid>
+  transaction_id    TEXT NOT NULL REFERENCES transactions(id),
+  position          INTEGER NOT NULL,
+  description       TEXT NOT NULL,
+  amount_minor      INTEGER NOT NULL,
+  quantity          INTEGER,
+  tax_amount_minor  INTEGER,               -- only when the receipt prints it; never derived
+  source            TEXT NOT NULL,         -- AUTO | USER
+  created_at        INTEGER NOT NULL,
+  updated_at        INTEGER NOT NULL
+);
+```
+
+Money is `int64` minor units end to end (2 decimal places assumed); OCR decimals are parsed exactly
+(string → cents), never via float math. Taxes are receipt-level rows exactly as printed; mixed rates become
+multiple rows. Per-item tax is not allocated from the receipt tax.
 
 ## Parsing rules (text fixtures)
 
 - `MERCHANT:` / `DATE:` / `CURRENCY:` header lines.
-- `TOTAL <amount>` → grand total. `Subtotal` is read but not stored as an item.
-- `VAT 19% <amount>` → exclusive tax; `incl. VAT 19% <amount>` → inclusive tax. Rate is stored as a fraction (0.19).
-- Any other line ending in an amount → line item. Lines without an amount ("Trip fare") and `(…)` notes are ignored.
+- Summary lines are not items: `TOTAL <amount>` → grand total, `Subtotal <amount>` → subtotal.
+- `VAT 19% <amount>` → exclusive tax (added on top of the subtotal); `incl. VAT 19% <amount>` → inclusive tax
+  (already inside the total). Name, rate and amount all come from the printed line.
+- Any other line ending in an amount → line item. Lines with no amount (a service description such as
+  "Trip fare", wrapped descriptions, headers) and `(…)` notes are ignored — turning them into items would
+  invent data.
 
 ## Reconciliation and status
 
-`Σ items + Σ exclusive taxes == grand_total`, tolerance 1 minor unit. Inclusive taxes are already inside the total.
+An internal check, not an endpoint, run by process, itemize and PATCH: do the items plus the taxes add up to
+what was paid? `Σ items + Σ exclusive taxes == grand_total`, tolerance 1 minor unit. Inclusive taxes are
+already inside the total.
 
 | Condition | Status | Reason |
 |---|---|---|
