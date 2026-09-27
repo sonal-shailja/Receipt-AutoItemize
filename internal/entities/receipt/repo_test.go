@@ -7,8 +7,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	apperrors "github.com/sonalshailja/receipt-autoitemize/internal/errors"
 	"github.com/sonalshailja/receipt-autoitemize/internal/entities/receipt"
+	apperrors "github.com/sonalshailja/receipt-autoitemize/internal/errors"
 	"github.com/sonalshailja/receipt-autoitemize/internal/testutils"
 )
 
