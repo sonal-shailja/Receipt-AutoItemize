@@ -19,21 +19,6 @@ extraction from stored OCR text; a 409 on user edits that break reconciliation.
 Non-goals: real OCR vendor, auth, UI, async processing, confidence scores, duplicate-receipt rejection,
 production file storage, invoicing/inventory/travel.
 
-## Chosen approach
-
-Mirror the `slice-lld-server` skeleton: gRPC services exposed as REST through grpc-gateway, protos generated
-with buf (generated code committed), GORM repositories, goose SQL migrations, viper TOML config, `slog`,
-prefixed ULID ids, typed app errors mapped to HTTP status.
-
-Deviations from slice, each for the one-command-run requirement:
-
-- **SQLite (pure-Go driver, no CGO)** instead of MySQL; the DB file is created and migrated on boot.
-- **No Redis** — nothing needs a cache or lock.
-- **`POST /receipts` is a plain HTTP handler** registered on the gateway mux, because grpc-gateway cannot
-  bind multipart bodies. It calls the same service layer as the gRPC methods.
-
-Routes use the brief's exact paths (no `/v1` prefix).
-
 ## Components
 
 | Unit | Purpose | Depends on |
@@ -178,7 +163,7 @@ clean → `COMPLETE`; tax-only → `NEEDS_REVIEW`, `line_items: []`; mismatch �
 
 ## Errors
 
-Slice's envelope: `{"error":{"code","message","request_id"}}`, extended with a `details` map for the 409
+Error body: `{"error":{"code","message","request_id"}}`, extended with a `details` map for the 409
 mismatch. Unknown ids → 404; bad input (missing file, empty item description, negative amount) → 400.
 
 ## Testing
