@@ -42,10 +42,21 @@ Routes use the brief's exact paths (no `/v1` prefix).
 | `extraction` | Pure `Parse(text) → Parsed{header, taxes, items}`. No I/O. | — |
 | `reconcile` | Pure `Check(total, taxes, items) → Result{status, reason, diff}`. Shared by process, itemize and PATCH. | — |
 | `receipt` service | Upload (store file, sha256), Process, Itemize, UpdateItems, Get. Owns transactions/idempotency. | repos, ocr, extraction, reconcile |
-| entities + repos | `receipts`, `transactions`, `taxes`, `line_items` | GORM/SQLite |
+| entities + repos | `receipts`, `ocr_results`, `transactions`, `taxes`, `line_items` | GORM/SQLite |
 
 A real vendor provider (e.g. a vision LLM reading a key from an env var) would slot in behind `ocr.Provider`;
-the provider name is recorded on the receipt.
+the provider name is recorded on each OCR result.
+
+## Receipt vs transaction
+
+- **Receipt** — the uploaded document: evidence of what the paper said. Immutable after upload.
+- **OCR result** — one attempt at reading a receipt. Each `process` call inserts a new row, so re-runs keep
+  history instead of overwriting the raw text.
+- **Transaction** — the expense record (header, taxes, items) interpreted from one OCR result and editable by
+  the user. It records which OCR result it was built from; `/itemize` replays that result's raw text.
+
+The brief pairs one receipt with one transaction; keeping them separate matches expense products where card
+transactions and receipts arrive independently. The brief defines no receipt read endpoint and none is added.
 
 ## Data model
 
@@ -57,17 +68,24 @@ CREATE TABLE receipts (
   file_path     TEXT NOT NULL,             -- data/uploads/<id><ext>
   size_bytes    INTEGER NOT NULL,
   sha256        TEXT NOT NULL,
-  status        TEXT NOT NULL,             -- UPLOADED | PROCESSED | FAILED
-  ocr_provider  TEXT,                      -- NULL until processed
-  raw_ocr_text  TEXT,                      -- full OCR output; source for re-itemize
-  processed_at  INTEGER,
-  created_at    INTEGER NOT NULL,          -- unix ms
-  updated_at    INTEGER NOT NULL
+  created_at    INTEGER NOT NULL           -- unix ms; row is never updated
 );
+
+CREATE TABLE ocr_results (
+  id          TEXT PRIMARY KEY,            -- ocr_<ulid>
+  receipt_id  TEXT NOT NULL REFERENCES receipts(id),
+  provider    TEXT NOT NULL,               -- stub
+  status      TEXT NOT NULL,               -- SUCCEEDED | FAILED
+  raw_text    TEXT,                        -- full OCR output; source for re-itemize
+  error       TEXT,                        -- set when FAILED
+  created_at  INTEGER NOT NULL
+);
+CREATE INDEX idx_ocr_results_receipt ON ocr_results(receipt_id);
 
 CREATE TABLE transactions (
   id                 TEXT PRIMARY KEY,     -- txn_<ulid>
   receipt_id         TEXT NOT NULL UNIQUE REFERENCES receipts(id),
+  ocr_result_id      TEXT NOT NULL REFERENCES ocr_results(id),  -- the OCR run this was built from
   merchant           TEXT,
   txn_date           TEXT,                 -- YYYY-MM-DD
   currency           TEXT,
@@ -87,7 +105,8 @@ CREATE TABLE taxes (
   amount_minor    INTEGER NOT NULL,
   inclusive       INTEGER NOT NULL,        -- 1 = already contained in the total
   position        INTEGER NOT NULL,
-  created_at      INTEGER NOT NULL
+  created_at      INTEGER NOT NULL,
+  deleted_at      INTEGER                  -- soft delete; NULL = live
 );
 
 CREATE TABLE line_items (
@@ -100,9 +119,16 @@ CREATE TABLE line_items (
   tax_amount_minor  INTEGER,               -- only when the receipt prints it; never derived
   source            TEXT NOT NULL,         -- AUTO | USER
   created_at        INTEGER NOT NULL,
-  updated_at        INTEGER NOT NULL
+  updated_at        INTEGER NOT NULL,
+  deleted_at        INTEGER                -- soft delete; NULL = live
 );
+CREATE INDEX idx_taxes_txn ON taxes(transaction_id, deleted_at);
+CREATE INDEX idx_line_items_txn ON line_items(transaction_id, deleted_at);
 ```
+
+Taxes and line items are never hard-deleted: replacing them soft-deletes the live rows and inserts new ones,
+so every earlier version (e.g. the OCR spelling before a user correction) stays queryable. All reads filter
+`deleted_at IS NULL`. Item ids therefore change on every replacement.
 
 Money is `int64` minor units end to end (2 decimal places assumed); OCR decimals are parsed exactly
 (string → cents), never via float math. Taxes are receipt-level rows exactly as printed; mixed rates become
@@ -137,13 +163,17 @@ clean → `COMPLETE`; tax-only → `NEEDS_REVIEW`, `line_items: []`; mismatch �
 ## Data flow
 
 1. `POST /receipts` — store file under the configured upload dir, persist receipt, return `receipt_id`.
-2. `POST /receipts/{id}/process` — OCR → store raw text → parse → reconcile → in one DB transaction upsert the
-   transaction (keyed by receipt_id) and replace its taxes and items. Re-processing updates, never duplicates.
-3. `GET /transactions/{id}` — header + taxes + line_items + itemize_status/reason.
-4. `POST /transactions/{id}/itemize` — re-parse the **stored** raw OCR text; replace line items and status only.
-5. `PATCH /transactions/{id}/items` — body is the full new item list (covers edit, merge, split). Reconciles →
-   replace items, status `COMPLETE`. Otherwise **409** with `{expected_total, items_total, tax_total,
-   difference}` and nothing persisted.
+2. `POST /receipts/{id}/process` — run OCR and insert an `ocr_results` row. On OCR failure the row is
+   `FAILED`, the call returns **422** `ocr_failed`, and any existing transaction is untouched. On success:
+   parse → reconcile → in one DB transaction upsert the transaction (keyed by receipt_id, pointed at the new
+   OCR result) and replace its taxes and items. Re-processing updates, never duplicates.
+3. `GET /transactions/{id}` — header + live taxes + live line_items + itemize_status/reason.
+4. `POST /transactions/{id}/itemize` — re-parse the raw text of the transaction's OCR result; replace line items
+   and status only. This discards user edits by design (they remain as soft-deleted rows).
+5. `PATCH /transactions/{id}/items` — body is the full new item list (covers add, remove, edit, merge, split).
+   Reconciles against the stored total and taxes → replace items as `source=USER`, status `COMPLETE`.
+   Otherwise **409** with `{expected_total, items_total, tax_total, difference}` and nothing persisted.
+   Descriptions are free text; only amounts affect reconciliation.
 
 ## Errors
 
@@ -154,7 +184,8 @@ mismatch. Unknown ids → 404; bad input (missing file, empty item description, 
 
 - Golden test: each fixture through parse + reconcile equals the gold values.
 - Unit tests for parser edge lines and reconciler table.
-- Service tests: re-process keeps one transaction; itemize replaces items only; PATCH mismatch → 409 and no write.
+- Service tests: re-process keeps one transaction and adds an OCR result; itemize replaces items only; replaced
+  items are soft-deleted; PATCH mismatch → 409 and no write.
 - README curls double as the manual end-to-end check.
 
 ## Assumptions
