@@ -38,9 +38,6 @@ type Receipt struct {
 // TableName returns the physical table.
 func (*Receipt) TableName() string { return "receipts" }
 
-// EntityName returns the logical name used in error messages.
-func (*Receipt) EntityName() string { return "receipt" }
-
 // BeforeCreate assigns an id unless the caller chose one.
 func (r *Receipt) BeforeCreate(tx *gorm.DB) error {
 	if r.ID == "" {
@@ -63,9 +60,6 @@ type OCRResult struct {
 
 // TableName returns the physical table.
 func (*OCRResult) TableName() string { return "ocr_results" }
-
-// EntityName returns the logical name used in error messages.
-func (*OCRResult) EntityName() string { return "ocr result" }
 
 // BeforeCreate assigns an id.
 func (o *OCRResult) BeforeCreate(tx *gorm.DB) error {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/textproto"
 	"time"
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
@@ -102,7 +103,7 @@ func newGatewayServer(ctx context.Context, deps *Dependencies) (*http.Server, er
 // incomingHeaderMatcher decides which HTTP headers cross into gRPC metadata.
 // The default drops x-request-id, which would break correlation.
 func incomingHeaderMatcher(key string) (string, bool) {
-	if key == requestid.HeaderKey || key == "X-Request-Id" {
+	if key == textproto.CanonicalMIMEHeaderKey(requestid.HeaderKey) {
 		return requestid.HeaderKey, true
 	}
 	return runtime.DefaultHeaderMatcher(key)

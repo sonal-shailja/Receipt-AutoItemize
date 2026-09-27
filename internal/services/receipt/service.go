@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"mime"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -83,7 +82,7 @@ func (s *Service) Upload(ctx context.Context, in UploadInput) (*receiptentity.Re
 		return nil, errors.New(errors.KindInternal, "file_store_failed", "could not store the file").Wrap(err)
 	}
 	if stored.SizeBytes == 0 {
-		_ = os.Remove(stored.Path)
+		_ = s.files.Remove(ctx, stored.Path)
 		return nil, errors.New(errors.KindInvalidArgument, "empty_file", "the uploaded file is empty")
 	}
 
@@ -98,7 +97,7 @@ func (s *Service) Upload(ctx context.Context, in UploadInput) (*receiptentity.Re
 	if err := s.receipts.Create(ctx, rec); err != nil {
 		// The file write is outside the database transaction, so undo it by
 		// hand rather than leave a file no row points at.
-		_ = os.Remove(stored.Path)
+		_ = s.files.Remove(ctx, stored.Path)
 		return nil, err
 	}
 	return rec, nil
@@ -281,10 +280,10 @@ func userItems(inputs []ItemInput) ([]transactionentity.LineItem, error) {
 }
 
 func mismatchError(result reconcile.Result) error {
-	message := fmt.Sprintf("line items plus taxes total %s but the receipt total is %s",
-		money.Format(result.ItemsTotal+result.TaxTotal), money.Format(result.ExpectedTotal))
-	if result.Reason == reconcile.ReasonTotalNotFound {
-		message = "the transaction has no grand total to reconcile line items against"
+	message := "the transaction has no grand total to reconcile line items against"
+	if result.Reason != reconcile.ReasonTotalNotFound {
+		message = fmt.Sprintf("line items plus taxes total %s but the receipt total is %s",
+			money.Format(result.ItemsTotal+result.TaxTotal), money.Format(result.ExpectedTotal))
 	}
 	return errors.New(errors.KindConflict, "items_total_mismatch", message).WithDetails(map[string]string{
 		"expected_total": money.Format(result.ExpectedTotal),

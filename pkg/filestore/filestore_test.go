@@ -43,3 +43,15 @@ func TestLocal_SaveStripsDirectories(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, strings.HasPrefix(stored.Path, dir))
 }
+
+func TestLocal_RemoveDeletesSavedFile(t *testing.T) {
+	store, err := NewLocal(t.TempDir())
+	require.NoError(t, err)
+	stored, err := store.Save(context.Background(), "gone.txt", strings.NewReader("x"))
+	require.NoError(t, err)
+
+	require.NoError(t, store.Remove(context.Background(), stored.Path))
+
+	_, err = os.Stat(stored.Path)
+	assert.True(t, os.IsNotExist(err))
+}

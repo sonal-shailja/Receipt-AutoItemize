@@ -19,9 +19,11 @@ type Stored struct {
 	SHA256    string
 }
 
-// Store saves a file under name.
+// Store saves files and removes them again.
 type Store interface {
 	Save(ctx context.Context, name string, r io.Reader) (Stored, error)
+	// Remove deletes a file previously returned by Save.
+	Remove(ctx context.Context, path string) error
 }
 
 // Local stores files in a directory on local disk.
@@ -61,4 +63,12 @@ func (l *Local) Save(_ context.Context, name string, r io.Reader) (Stored, error
 	}
 
 	return Stored{Path: path, SizeBytes: size, SHA256: hex.EncodeToString(hash.Sum(nil))}, nil
+}
+
+// Remove deletes a saved file.
+func (l *Local) Remove(_ context.Context, path string) error {
+	if err := os.Remove(path); err != nil {
+		return fmt.Errorf("filestore: removing %s: %w", path, err)
+	}
+	return nil
 }

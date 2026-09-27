@@ -14,9 +14,6 @@ type Model struct {
 	UpdatedAt int64  `json:"updated_at" gorm:"column:updated_at;autoUpdateTime:false"`
 }
 
-// GetID returns the primary key.
-func (m *Model) GetID() string { return m.ID }
-
 // Touch sets CreatedAt if unset and always advances UpdatedAt.
 func (m *Model) Touch(now time.Time) {
 	ms := now.UTC().UnixMilli()
@@ -44,21 +41,4 @@ func (m *Model) BeforeUpdate(*gorm.DB) error {
 type SoftDeletableModel struct {
 	Model
 	DeletedAt *int64 `json:"deleted_at" gorm:"column:deleted_at;index"`
-}
-
-// IsDeleted reports whether the row is soft-deleted.
-func (m *SoftDeletableModel) IsDeleted() bool { return m.DeletedAt != nil }
-
-// MarkDeleted sets the soft-delete marker.
-func (m *SoftDeletableModel) MarkDeleted(now time.Time) {
-	ms := now.UTC().UnixMilli()
-	m.DeletedAt = &ms
-	m.UpdatedAt = ms
-}
-
-// Entity is implemented by every persisted model.
-type Entity interface {
-	TableName() string
-	EntityName() string
-	GetID() string
 }

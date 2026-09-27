@@ -48,9 +48,6 @@ type Transaction struct {
 // TableName returns the physical table.
 func (*Transaction) TableName() string { return "transactions" }
 
-// EntityName returns the logical name used in error messages.
-func (*Transaction) EntityName() string { return "transaction" }
-
 // BeforeCreate assigns an id.
 func (t *Transaction) BeforeCreate(tx *gorm.DB) error {
 	if t.ID == "" {
@@ -94,9 +91,6 @@ type Tax struct {
 // TableName returns the physical table.
 func (*Tax) TableName() string { return "taxes" }
 
-// EntityName returns the logical name used in error messages.
-func (*Tax) EntityName() string { return "tax" }
-
 // BeforeCreate assigns an id.
 func (t *Tax) BeforeCreate(tx *gorm.DB) error {
 	if t.ID == "" {
@@ -122,9 +116,6 @@ type LineItem struct {
 
 // TableName returns the physical table.
 func (*LineItem) TableName() string { return "line_items" }
-
-// EntityName returns the logical name used in error messages.
-func (*LineItem) EntityName() string { return "line item" }
 
 // BeforeCreate assigns an id.
 func (l *LineItem) BeforeCreate(tx *gorm.DB) error {

@@ -4,7 +4,6 @@ package database
 
 import (
 	"context"
-	"database/sql"
 	"embed"
 	"fmt"
 	"io/fs"
@@ -76,8 +75,8 @@ func Connect(ctx context.Context, cfg config.DatabaseConfig) (*DB, error) {
 	return &DB{db: gormDB}, nil
 }
 
-// dsn turns on foreign keys, which SQLite leaves off by default, and WAL so
-// readers do not block the writer.
+// dsn turns on foreign keys, which SQLite leaves off by default, waits up to
+// 5s on a locked database instead of failing, and uses WAL journaling.
 func dsn(path string) string {
 	return path + "?_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)"
 }
@@ -127,9 +126,4 @@ func (d *DB) Close() error {
 		return err
 	}
 	return pool.Close()
-}
-
-// SQL exposes the underlying *sql.DB.
-func (d *DB) SQL() (*sql.DB, error) {
-	return d.db.DB()
 }

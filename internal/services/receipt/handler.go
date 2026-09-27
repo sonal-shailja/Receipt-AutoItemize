@@ -23,29 +23,17 @@ func NewHandler(service *Service) *Handler {
 
 // ProcessReceipt implements receiptv1.ReceiptServiceServer.
 func (h *Handler) ProcessReceipt(ctx context.Context, req *receiptv1.ProcessReceiptRequest) (*receiptv1.Transaction, error) {
-	txn, err := h.service.Process(ctx, req.GetReceiptId())
-	if err != nil {
-		return nil, apperrors.ToGRPCStatus(err)
-	}
-	return toProto(txn), nil
+	return respond(h.service.Process(ctx, req.GetReceiptId()))
 }
 
 // GetTransaction implements receiptv1.ReceiptServiceServer.
 func (h *Handler) GetTransaction(ctx context.Context, req *receiptv1.GetTransactionRequest) (*receiptv1.Transaction, error) {
-	txn, err := h.service.Get(ctx, req.GetTransactionId())
-	if err != nil {
-		return nil, apperrors.ToGRPCStatus(err)
-	}
-	return toProto(txn), nil
+	return respond(h.service.Get(ctx, req.GetTransactionId()))
 }
 
 // ItemizeTransaction implements receiptv1.ReceiptServiceServer.
 func (h *Handler) ItemizeTransaction(ctx context.Context, req *receiptv1.ItemizeTransactionRequest) (*receiptv1.Transaction, error) {
-	txn, err := h.service.Itemize(ctx, req.GetTransactionId())
-	if err != nil {
-		return nil, apperrors.ToGRPCStatus(err)
-	}
-	return toProto(txn), nil
+	return respond(h.service.Itemize(ctx, req.GetTransactionId()))
 }
 
 // UpdateLineItems implements receiptv1.ReceiptServiceServer.
@@ -69,7 +57,11 @@ func (h *Handler) UpdateLineItems(ctx context.Context, req *receiptv1.UpdateLine
 		inputs = append(inputs, in)
 	}
 
-	txn, err := h.service.UpdateItems(ctx, req.GetTransactionId(), inputs)
+	return respond(h.service.UpdateItems(ctx, req.GetTransactionId(), inputs))
+}
+
+// respond maps a service result onto the RPC response.
+func respond(txn *transactionentity.Transaction, err error) (*receiptv1.Transaction, error) {
 	if err != nil {
 		return nil, apperrors.ToGRPCStatus(err)
 	}

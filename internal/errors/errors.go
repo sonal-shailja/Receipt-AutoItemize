@@ -65,18 +65,11 @@ func (e *Error) Error() string {
 // Unwrap exposes the cause to errors.Is and errors.As.
 func (e *Error) Unwrap() error { return e.cause }
 
-// Wrap attaches an underlying cause and returns the same error, so call sites
-// read as a single expression.
+// Wrap returns a copy of e with cause attached, leaving e untouched so a shared
+// error value can be wrapped safely.
 func (e *Error) Wrap(cause error) *Error {
 	clone := *e
 	clone.cause = cause
-	return &clone
-}
-
-// WithMessage overrides the caller-facing message.
-func (e *Error) WithMessage(message string) *Error {
-	clone := *e
-	clone.Message = message
 	return &clone
 }
 
@@ -85,15 +78,6 @@ func (e *Error) WithDetails(details map[string]string) *Error {
 	clone := *e
 	clone.Details = details
 	return &clone
-}
-
-// Is treats two Errors as equal when their codes match.
-func (e *Error) Is(target error) bool {
-	var other *Error
-	if !errors.As(target, &other) {
-		return false
-	}
-	return e.Code == other.Code
 }
 
 // KindOf reports the Kind of err, defaulting to KindInternal for errors that did
