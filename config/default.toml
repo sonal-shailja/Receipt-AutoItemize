@@ -1,0 +1,33 @@
+# Committed defaults. config/<APP_ENV>.toml overrides them, and APP_* environment
+# variables override both (APP_SERVER_HTTP overrides server.http).
+# Paths are relative to the repository root, where `make run` starts the process.
+# Never put a credential in this file.
+
+[app]
+    name = "receipt-autoitemize"
+    env  = "dev"
+
+[log]
+    level  = "info"
+    format = "text"
+
+[server]
+    # gRPC, native protobuf over HTTP/2. Only the gateway needs to reach it.
+    grpc = "127.0.0.1:8082"
+    # REST/JSON: the API in the brief, translated to gRPC by grpc-gateway.
+    http = "0.0.0.0:8080"
+    shutdownTimeout = "10s"
+
+[database]
+    # SQLite file, created and migrated on boot.
+    path  = "data/app.db"
+    debug = false
+
+[storage]
+    uploadDir      = "data/uploads"
+    maxUploadBytes = 10485760
+
+[ocr]
+    # "stub" reads text uploads directly and maps image/PDF names to fixture text.
+    provider    = "stub"
+    fixturesDir = "fixtures/task-a"

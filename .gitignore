@@ -1,0 +1,10 @@
+bin/
+data/
+coverage.out
+*.test
+.env
+config/*.local.toml
+.slash-cli/
+.idea/
+.vscode/
+.DS_Store
